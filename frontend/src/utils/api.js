@@ -1,4 +1,4 @@
-const API_BASE = '/api';
+const API_BASE = 'https://attendance-tracker-4dou.onrender.com/api';
 
 function getToken() {
   return localStorage.getItem('token');
