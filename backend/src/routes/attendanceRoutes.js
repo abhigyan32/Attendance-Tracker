@@ -29,7 +29,10 @@ router.post(
   checkIn
 );
 
-router.post('/check-out', authenticate, locationValidation, checkOut);
+router.post('/check-out', authenticate, [
+  ...locationValidation,
+  body('selfie').isString().notEmpty().withMessage('Checkout photo is required.'),
+], checkOut);
 
 router.get('/today', authenticate, getTodayStatus);
 

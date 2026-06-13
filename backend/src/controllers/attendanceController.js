@@ -6,7 +6,22 @@ const {
   calculateWorkingHours,
   getAttendanceStatus,
   googleMapsLink,
+  distanceInMeters,
 } = require('../utils/helpers');
+
+async function validateBranchLocation(userId, latitude, longitude) {
+  const result = await pool.query(`SELECT b.name, b.latitude, b.longitude, b.allowed_radius_meters
+    FROM users u LEFT JOIN branches b ON b.id = u.branch_id WHERE u.id = $1`, [userId]);
+  const branch = result.rows[0];
+  if (!branch || branch.latitude == null) {
+    return { valid: false, message: 'No active office branch is assigned to your profile.' };
+  }
+  const distance = distanceInMeters(Number(latitude), Number(longitude), Number(branch.latitude), Number(branch.longitude));
+  if (distance > Number(branch.allowed_radius_meters)) {
+    return { valid: false, message: `You are ${Math.round(distance)}m from ${branch.name}. Attendance is allowed within ${branch.allowed_radius_meters}m.` };
+  }
+  return { valid: true };
+}
 
 async function checkIn(req, res) {
   const errors = validationResult(req);
@@ -21,6 +36,8 @@ async function checkIn(req, res) {
   const userAgent = req.headers['user-agent'] || 'unknown';
 
   try {
+    const branchCheck = await validateBranchLocation(userId, latitude, longitude);
+    if (!branchCheck.valid) return res.status(403).json({ message: branchCheck.message });
     const existing = await pool.query(
       'SELECT id, check_in_time FROM attendance WHERE user_id = $1 AND attendance_date = $2',
       [userId, today]
@@ -70,12 +87,14 @@ async function checkOut(req, res) {
     return res.status(400).json({ errors: errors.array() });
   }
 
-  const { latitude, longitude, accuracy } = req.body;
+  const { latitude, longitude, accuracy, selfie } = req.body;
   const userId = req.user.id;
   const today = getTodayDate();
   const ip = getClientIp(req);
 
   try {
+    const branchCheck = await validateBranchLocation(userId, latitude, longitude);
+    if (!branchCheck.valid) return res.status(403).json({ message: branchCheck.message });
     const existing = await pool.query(
       'SELECT * FROM attendance WHERE user_id = $1 AND attendance_date = $2',
       [userId, today]
@@ -95,10 +114,11 @@ async function checkOut(req, res) {
         check_out_latitude = $1,
         check_out_longitude = $2,
         check_out_accuracy = $3,
-        check_out_ip = $4
-       WHERE user_id = $5 AND attendance_date = $6
+        check_out_ip = $4,
+        check_out_selfie = $5
+       WHERE user_id = $6 AND attendance_date = $7
        RETURNING *`,
-      [latitude, longitude, accuracy, ip, userId, today]
+      [latitude, longitude, accuracy, ip, selfie, userId, today]
     );
 
     res.json(formatAttendanceRecord(result.rows[0]));
@@ -176,9 +196,11 @@ async function getAdminDashboard(req, res) {
     );
 
     const todayAttendance = await pool.query(
-      `SELECT a.*, u.name, u.employee_id, u.department
+      `SELECT a.*, u.name, u.employee_id, u.department, s.start_time, s.grace_minutes,
+        s.half_day_minutes, s.full_day_minutes, s.overtime_after_minutes, s.is_split
        FROM attendance a
        JOIN users u ON a.user_id = u.id
+       LEFT JOIN shifts s ON s.id = u.shift_id
        WHERE a.attendance_date = $1`,
       [today]
     );
@@ -210,9 +232,11 @@ async function getAdminAttendance(req, res) {
 
   try {
     let query = `
-      SELECT a.*, u.name, u.employee_id, u.department
+      SELECT a.*, u.name, u.employee_id, u.department, s.start_time, s.grace_minutes,
+        s.half_day_minutes, s.full_day_minutes, s.overtime_after_minutes, s.is_split
       FROM attendance a
       JOIN users u ON a.user_id = u.id
+      LEFT JOIN shifts s ON s.id = u.shift_id
       WHERE 1=1
     `;
     const params = [];
@@ -263,6 +287,8 @@ async function getAdminAttendance(req, res) {
         checkOutLongitude: r.check_out_longitude,
         userAgent: r.user_agent,
         hasSelfie: !!r.check_in_selfie,
+        hasCheckoutSelfie: !!r.check_out_selfie,
+        splitAttendance: !!r.is_split,
       }))
     );
   } catch (err) {
@@ -276,9 +302,11 @@ async function exportAttendance(req, res) {
 
   try {
     let query = `
-      SELECT a.*, u.name, u.employee_id, u.department
+      SELECT a.*, u.name, u.employee_id, u.department, s.start_time, s.grace_minutes,
+        s.half_day_minutes, s.full_day_minutes, s.overtime_after_minutes, s.is_split
       FROM attendance a
       JOIN users u ON a.user_id = u.id
+      LEFT JOIN shifts s ON s.id = u.shift_id
       WHERE 1=1
     `;
     const params = [];
@@ -373,6 +401,7 @@ function formatAttendanceRecord(record) {
     checkOutLocation: googleMapsLink(record.check_out_latitude, record.check_out_longitude),
     userAgent: record.user_agent,
     hasSelfie: !!record.check_in_selfie,
+    hasCheckoutSelfie: !!record.check_out_selfie,
   };
 }
 

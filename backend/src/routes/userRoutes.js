@@ -1,49 +1,25 @@
 const express = require('express');
+const multer = require('multer');
 const { body } = require('express-validator');
 const { authenticate, authorizeAdmin } = require('../middleware/auth');
-const {
-  getProfile,
-  getAllUsers,
-  createUser,
-  updateUser,
-  disableUser,
-} = require('../controllers/userController');
+const users = require('../controllers/userController');
 
 const router = express.Router();
+const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 5 * 1024 * 1024 } });
+const userValidation = [
+  body('name').trim().notEmpty(), body('email').isEmail().normalizeEmail(),
+  body('department').trim().notEmpty(), body('role').isIn(['employee', 'admin']),
+  body('weekOffs').optional().isArray(),
+];
 
-router.get('/profile', authenticate, getProfile);
-
-router.get('/', authenticate, authorizeAdmin, getAllUsers);
-
-router.post(
-  '/',
-  authenticate,
-  authorizeAdmin,
-  [
-    body('employeeId').trim().notEmpty().withMessage('Employee ID is required.'),
-    body('name').trim().notEmpty().withMessage('Name is required.'),
-    body('email').isEmail().normalizeEmail().withMessage('Valid email is required.'),
-    body('password').isLength({ min: 6 }).withMessage('Password must be at least 6 characters.'),
-    body('department').trim().notEmpty().withMessage('Department is required.'),
-    body('role').optional().isIn(['employee', 'admin']).withMessage('Invalid role.'),
-  ],
-  createUser
-);
-
-router.put(
-  '/:id',
-  authenticate,
-  authorizeAdmin,
-  [
-    body('name').optional().trim().notEmpty(),
-    body('email').optional().isEmail().normalizeEmail(),
-    body('password').optional().isLength({ min: 6 }),
-    body('department').optional().trim().notEmpty(),
-    body('role').optional().isIn(['employee', 'admin']),
-  ],
-  updateUser
-);
-
-router.patch('/:id/disable', authenticate, authorizeAdmin, disableUser);
-
+router.get('/profile', authenticate, users.getProfile);
+router.get('/', authenticate, authorizeAdmin, users.getAllUsers);
+router.post('/', authenticate, authorizeAdmin, [
+  body('employeeId').trim().notEmpty(), body('password').isLength({ min: 6 }), ...userValidation,
+], users.createUser);
+router.post('/bulk', authenticate, authorizeAdmin, upload.single('file'), users.bulkCreateUsers);
+router.put('/:id', authenticate, authorizeAdmin, userValidation, users.updateUser);
+router.put('/:id/reset-password', authenticate, authorizeAdmin,
+  body('password').isLength({ min: 6 }), users.resetPassword);
+router.patch('/:id/disable', authenticate, authorizeAdmin, users.disableUser);
 module.exports = router;
