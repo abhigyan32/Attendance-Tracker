@@ -12,6 +12,13 @@ export default function Dashboard() {
   const [error, setError] = useState('');
   const [showWebcam, setShowWebcam] = useState(false);
   const [location, setLocation] = useState(null);
+  const [cameraMode, setCameraMode] = useState('check-in');
+  const [toast, setToast] = useState('');
+
+  const showToast = (message) => {
+    setToast(message);
+    window.setTimeout(() => setToast(''), 4000);
+  };
 
   const fetchStatus = async () => {
     try {
@@ -33,6 +40,7 @@ export default function Dashboard() {
     try {
       const loc = await getGeolocation();
       setLocation(loc);
+      setCameraMode('check-in');
       setShowWebcam(true);
     } catch (err) {
       setError(err.message);
@@ -46,6 +54,7 @@ export default function Dashboard() {
     try {
       await api.checkIn({ ...location, selfie });
       await fetchStatus();
+      showToast('Checked in successfully.');
     } catch (err) {
       setError(err.message);
     } finally {
@@ -54,12 +63,25 @@ export default function Dashboard() {
   };
 
   const handleCheckOut = async () => {
-    setActionLoading(true);
     setError('');
     try {
       const loc = await getGeolocation();
-      await api.checkOut(loc);
+      setLocation(loc);
+      setCameraMode('check-out');
+      setShowWebcam(true);
+    } catch (err) {
+      setError(err.message);
+    }
+  };
+
+  const completeCheckOut = async (selfie) => {
+    setShowWebcam(false);
+    setActionLoading(true);
+    setError('');
+    try {
+      await api.checkOut({ ...location, selfie });
       await fetchStatus();
+      showToast('Checked out successfully.');
     } catch (err) {
       setError(err.message);
     } finally {
@@ -87,6 +109,8 @@ export default function Dashboard() {
       {error && (
         <div className="mb-6 rounded-lg bg-red-50 p-4 text-sm text-red-700">{error}</div>
       )}
+
+      {toast && <div className="fixed right-5 top-5 z-50 flex items-center gap-4 rounded-lg bg-green-600 px-4 py-3 text-sm font-medium text-white shadow-lg"><span>{toast}</span><button onClick={() => setToast('')} className="text-lg leading-none" aria-label="Close">X</button></div>}
 
       <div className="grid gap-6 md:grid-cols-2">
         <div className="rounded-xl bg-white p-6 shadow-sm">
@@ -167,7 +191,7 @@ export default function Dashboard() {
       </div>
 
       {showWebcam && (
-        <WebcamCapture onCapture={handleCheckIn} onClose={() => setShowWebcam(false)} />
+        <WebcamCapture mode={cameraMode} onCapture={cameraMode === 'check-out' ? completeCheckOut : handleCheckIn} onClose={() => setShowWebcam(false)} />
       )}
     </Layout>
   );

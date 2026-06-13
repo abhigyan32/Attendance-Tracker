@@ -1,6 +1,6 @@
 import { useRef, useState, useCallback } from 'react';
 
-export default function WebcamCapture({ onCapture, onClose }) {
+export default function WebcamCapture({ onCapture, onClose, mode = 'check-in' }) {
   const videoRef = useRef(null);
   const canvasRef = useRef(null);
   const [stream, setStream] = useState(null);
@@ -49,7 +49,7 @@ export default function WebcamCapture({ onCapture, onClose }) {
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
       <div className="w-full max-w-md rounded-xl bg-white p-6 shadow-xl">
-        <h3 className="mb-4 text-lg font-semibold text-gray-900">Capture Selfie for Check-In</h3>
+        <h3 className="mb-4 text-lg font-semibold text-gray-900">Capture Photo for {mode === 'check-out' ? 'Check-Out' : 'Check-In'}</h3>
 
         {error && (
           <div className="mb-4 rounded-lg bg-red-50 p-3 text-sm text-red-700">{error}</div>
@@ -79,7 +79,7 @@ export default function WebcamCapture({ onCapture, onClose }) {
               onClick={capture}
               className="flex-1 rounded-lg bg-green-600 px-4 py-2.5 text-sm font-medium text-white hover:bg-green-700"
             >
-              Capture & Check In
+              Capture & {mode === 'check-out' ? 'Check Out' : 'Check In'}
             </button>
           )}
           <button

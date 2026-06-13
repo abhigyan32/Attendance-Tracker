@@ -16,6 +16,7 @@ export default function Layout({ children }) {
         { path: '/admin', label: 'Dashboard' },
         { path: '/admin/attendance', label: 'Attendance' },
         { path: '/admin/users', label: 'Users' },
+        { path: '/admin/setup', label: 'Setup & Holidays' },
         { path: '/profile', label: 'Profile' },
       ]
     : [

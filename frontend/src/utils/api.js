@@ -27,6 +27,8 @@ async function request(endpoint, options = {}) {
     throw new Error('Session expired');
   }
 
+  if (response.status === 204) return null;
+
   const contentType = response.headers.get('content-type');
   if (contentType && contentType.includes('text/csv')) {
     return response;
@@ -36,6 +38,17 @@ async function request(endpoint, options = {}) {
   if (!response.ok) {
     throw new Error(data.message || data.errors?.[0]?.msg || 'Request failed');
   }
+  return data;
+}
+
+async function upload(endpoint, file) {
+  const form = new FormData();
+  form.append('file', file);
+  const response = await fetch(`${API_BASE}${endpoint}`, {
+    method: 'POST', headers: { Authorization: `Bearer ${getToken()}` }, body: form,
+  });
+  const data = await response.json();
+  if (!response.ok && response.status !== 207) throw new Error(data.message || 'Upload failed');
   return data;
 }
 
@@ -92,6 +105,21 @@ export const api = {
     request(`/users/${id}/disable`, {
       method: 'PATCH',
     }),
+
+  resetPassword: (id, password) => request(`/users/${id}/reset-password`, {
+    method: 'PUT', body: JSON.stringify({ password }),
+  }),
+
+  bulkCreateUsers: (file) => upload('/users/bulk', file),
+
+  getAdminSetup: () => request('/admin/setup'),
+  createDepartment: (data) => request('/admin/departments', { method: 'POST', body: JSON.stringify(data) }),
+  createBranch: (data) => request('/admin/branches', { method: 'POST', body: JSON.stringify(data) }),
+  createShift: (data) => request('/admin/shifts', { method: 'POST', body: JSON.stringify(data) }),
+  getHolidays: () => request('/admin/holidays'),
+  createHoliday: (data) => request('/admin/holidays', { method: 'POST', body: JSON.stringify(data) }),
+  deleteHoliday: (id) => request(`/admin/holidays/${id}`, { method: 'DELETE' }),
+  updateRules: (data) => request('/admin/rules', { method: 'PUT', body: JSON.stringify(data) }),
 
   exportAttendance: async (params = {}) => {
     const token = getToken();

@@ -8,6 +8,8 @@ import Profile from './pages/Profile';
 import AdminDashboard from './pages/AdminDashboard';
 import AdminAttendance from './pages/AdminAttendance';
 import AdminUsers from './pages/AdminUsers';
+import EmployeeForm from './pages/EmployeeForm';
+import AdminSetup from './pages/AdminSetup';
 
 function RootRedirect() {
   const { user, loading } = useAuth();
@@ -43,6 +45,9 @@ export default function App() {
           <Route path="/admin/users" element={
             <ProtectedRoute adminOnly><AdminUsers /></ProtectedRoute>
           } />
+          <Route path="/admin/users/new" element={<ProtectedRoute adminOnly><EmployeeForm /></ProtectedRoute>} />
+          <Route path="/admin/users/:id/edit" element={<ProtectedRoute adminOnly><EmployeeForm /></ProtectedRoute>} />
+          <Route path="/admin/setup" element={<ProtectedRoute adminOnly><AdminSetup /></ProtectedRoute>} />
 
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
