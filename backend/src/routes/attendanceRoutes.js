@@ -8,6 +8,7 @@ const {
   getHistory,
   getAdminDashboard,
   getAdminAttendance,
+  overrideAttendance,
   exportAttendance,
 } = require('../controllers/attendanceController');
 
@@ -41,6 +42,18 @@ router.get('/history', authenticate, getHistory);
 router.get('/admin/dashboard', authenticate, authorizeAdmin, getAdminDashboard);
 
 router.get('/admin/records', authenticate, authorizeAdmin, getAdminAttendance);
+
+router.post(
+  '/admin/override',
+  authenticate,
+  authorizeAdmin,
+  [
+    body('userId').isUUID().withMessage('A valid user id is required.'),
+    body('status').isIn(['present', 'absent']).withMessage('Status must be present or absent.'),
+    body('date').optional().isISO8601().withMessage('A valid date is required.'),
+  ],
+  overrideAttendance
+);
 
 router.get('/admin/export', authenticate, authorizeAdmin, exportAttendance);
 

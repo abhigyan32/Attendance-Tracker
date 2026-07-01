@@ -191,35 +191,127 @@ async function getAdminDashboard(req, res) {
   const today = getTodayDate();
 
   try {
-    const totalEmployees = await pool.query(
-      "SELECT COUNT(*) FROM users WHERE role = 'employee' AND status = 'active'"
+    const [employeesResult, todayAttendance, weeklyResult] = await Promise.all([
+      pool.query(
+        `SELECT id, employee_id, name, email, department, designation, created_at
+         FROM users WHERE role = 'employee' AND status = 'active' ORDER BY name`
+      ),
+      pool.query(
+        `SELECT a.*, u.name, u.employee_id, u.department, u.email, u.designation,
+          s.start_time, s.grace_minutes, s.half_day_minutes, s.full_day_minutes, s.overtime_after_minutes
+         FROM attendance a
+         JOIN users u ON a.user_id = u.id
+         LEFT JOIN shifts s ON s.id = u.shift_id
+         WHERE a.attendance_date = $1`,
+        [today]
+      ),
+      pool.query(
+        `SELECT a.attendance_date::text AS date,
+          COUNT(DISTINCT CASE WHEN a.check_in_time IS NOT NULL THEN a.user_id END)::int AS present
+         FROM attendance a
+         JOIN users u ON u.id = a.user_id AND u.role = 'employee' AND u.status = 'active'
+         WHERE a.attendance_date >= CURRENT_DATE - INTERVAL '6 days'
+         GROUP BY a.attendance_date
+         ORDER BY a.attendance_date`
+      ),
+    ]);
+
+    const employees = employeesResult.rows;
+    const activeEmployees = employees.length;
+    const attendanceByUser = new Map(
+      todayAttendance.rows.map((r) => [r.user_id, r])
     );
 
-    const todayAttendance = await pool.query(
-      `SELECT a.*, u.name, u.employee_id, u.department, s.start_time, s.grace_minutes,
-        s.half_day_minutes, s.full_day_minutes, s.overtime_after_minutes, s.is_split
-       FROM attendance a
-       JOIN users u ON a.user_id = u.id
-       LEFT JOIN shifts s ON s.id = u.shift_id
-       WHERE a.attendance_date = $1`,
-      [today]
-    );
+    const formatEmployeeRow = (emp, attendance = null) => ({
+      id: emp.id,
+      employeeId: emp.employee_id,
+      name: emp.name,
+      email: emp.email,
+      department: emp.department,
+      designation: emp.designation,
+      checkIn: attendance?.check_in_time || null,
+      checkOut: attendance?.check_out_time || null,
+      workingHours: attendance
+        ? calculateWorkingHours(attendance.check_in_time, attendance.check_out_time)
+        : null,
+      status: attendance ? getAttendanceStatus(attendance) : 'Absent',
+    });
 
-    const presentToday = todayAttendance.rows.filter((r) => r.check_in_time).length;
-    const activeEmployees = parseInt(totalEmployees.rows[0].count, 10);
-    const absentToday = activeEmployees - presentToday;
-    const lateArrivals = todayAttendance.rows.filter((r) => {
-      if (!r.check_in_time) return false;
-      const h = new Date(r.check_in_time).getHours();
-      const m = new Date(r.check_in_time).getMinutes();
-      return h > 9 || (h === 9 && m > 30);
-    }).length;
+    const presentList = [];
+    const lateList = [];
+    const absentList = [];
+
+    employees.forEach((emp) => {
+      const attendance = attendanceByUser.get(emp.id);
+      if (attendance?.check_in_time) {
+        const row = formatEmployeeRow(emp, attendance);
+        presentList.push(row);
+        if (row.status === 'Late') lateList.push(row);
+      } else {
+        absentList.push(formatEmployeeRow(emp));
+      }
+    });
+
+    const checkedOutToday = presentList.filter((r) => r.checkOut).length;
+    const stillWorking = presentList.length - checkedOutToday;
+    const attendanceRate = activeEmployees
+      ? Math.round((presentList.length / activeEmployees) * 100)
+      : 0;
+
+    const departmentMap = {};
+    employees.forEach((emp) => {
+      const dept = emp.department || 'Unassigned';
+      if (!departmentMap[dept]) {
+        departmentMap[dept] = { department: dept, total: 0, present: 0, absent: 0, late: 0 };
+      }
+      departmentMap[dept].total += 1;
+      const attendance = attendanceByUser.get(emp.id);
+      if (attendance?.check_in_time) {
+        departmentMap[dept].present += 1;
+        if (getAttendanceStatus(attendance) === 'Late') departmentMap[dept].late += 1;
+      } else {
+        departmentMap[dept].absent += 1;
+      }
+    });
+
+    const trendMap = Object.fromEntries(
+      weeklyResult.rows.map((r) => [r.date, r.present])
+    );
+    const weeklyTrend = [];
+    for (let i = 6; i >= 0; i -= 1) {
+      const d = new Date();
+      d.setDate(d.getDate() - i);
+      const dateStr = d.toISOString().split('T')[0];
+      const present = trendMap[dateStr] || 0;
+      weeklyTrend.push({
+        date: dateStr,
+        label: d.toLocaleDateString('en-US', { weekday: 'short' }),
+        present,
+        absent: Math.max(activeEmployees - present, 0),
+        rate: activeEmployees ? Math.round((present / activeEmployees) * 100) : 0,
+      });
+    }
+
+    const recentCheckIns = [...presentList]
+      .sort((a, b) => new Date(b.checkIn) - new Date(a.checkIn))
+      .slice(0, 5);
 
     res.json({
+      date: today,
       totalEmployees: activeEmployees,
-      presentToday,
-      absentToday,
-      lateArrivals,
+      presentToday: presentList.length,
+      absentToday: absentList.length,
+      lateArrivals: lateList.length,
+      checkedOutToday,
+      stillWorking,
+      attendanceRate,
+      employees: employees.map((e) => formatEmployeeRow(e, attendanceByUser.get(e.id))),
+      presentList,
+      absentList,
+      lateList,
+      recentCheckIns,
+      departmentBreakdown: Object.values(departmentMap),
+      weeklyTrend,
     });
   } catch (err) {
     console.error('Admin dashboard error:', err);
@@ -294,6 +386,64 @@ async function getAdminAttendance(req, res) {
   } catch (err) {
     console.error('Admin attendance error:', err);
     res.status(500).json({ message: 'Server error.' });
+  }
+}
+
+async function overrideAttendance(req, res) {
+  const errors = validationResult(req);
+  if (!errors.isEmpty()) {
+    return res.status(400).json({ errors: errors.array() });
+  }
+
+  const { userId, status, date } = req.body;
+  const targetDate = date || getTodayDate();
+
+  try {
+    if (status === 'absent') {
+      const result = await pool.query(
+        'DELETE FROM attendance WHERE user_id = $1 AND attendance_date = $2 RETURNING id',
+        [userId, targetDate]
+      );
+      return res.json({
+        success: true,
+        status: 'absent',
+        date: targetDate,
+        deleted: result.rowCount > 0,
+      });
+    }
+
+    if (status !== 'present') {
+      return res.status(400).json({ message: 'Status must be present or absent.' });
+    }
+
+    const existing = await pool.query(
+      'SELECT * FROM attendance WHERE user_id = $1 AND attendance_date = $2',
+      [userId, targetDate]
+    );
+
+    if (existing.rows.length > 0) {
+      const result = await pool.query(
+        `UPDATE attendance SET
+          check_in_time = COALESCE(check_in_time, NOW()),
+          check_out_time = COALESCE(check_out_time, NULL),
+          updated_at = NOW()
+         WHERE user_id = $1 AND attendance_date = $2
+         RETURNING *`,
+        [userId, targetDate]
+      );
+      return res.json({ success: true, status: 'present', date: targetDate, record: formatAttendanceRecord(result.rows[0]) });
+    }
+
+    const result = await pool.query(
+      `INSERT INTO attendance (user_id, attendance_date, check_in_time, created_at)
+       VALUES ($1, $2, NOW(), NOW()) RETURNING *`,
+      [userId, targetDate]
+    );
+
+    res.json({ success: true, status: 'present', date: targetDate, record: formatAttendanceRecord(result.rows[0]) });
+  } catch (err) {
+    console.error('Attendance override error:', err);
+    res.status(500).json({ message: 'Server error while updating attendance.' });
   }
 }
 
@@ -412,5 +562,6 @@ module.exports = {
   getHistory,
   getAdminDashboard,
   getAdminAttendance,
+  overrideAttendance,
   exportAttendance,
 };

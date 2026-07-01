@@ -76,9 +76,9 @@ export default function Login() {
           </button>
 
           <div className="mt-6 rounded-lg bg-gray-50 p-4 text-xs text-gray-500">
-            <p className="font-medium text-gray-700">Test Credentials:</p>
-            <p className="mt-1">Admin: admin@company.com / Admin@123</p>
-            <p>Employee: john@company.com / Employee@123</p>
+            <p className="font-medium text-gray-700">Having trouble signing in?</p>
+            <p className="mt-1">Please verify your email and password. </p>
+            <p>If the issue persists, contact your administrator.</p>
           </div>
         </form>
       </div>

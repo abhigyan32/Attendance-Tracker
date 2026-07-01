@@ -152,6 +152,46 @@ Same query parameters as `/attendance/admin/records`.
 
 ---
 
+## Admin Setup (Admin only)
+
+### GET /admin/setup
+Returns departments, branches, shifts, and attendance rules.
+
+### Departments
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| POST | /admin/departments | Create department |
+| PUT | /admin/departments/:id | Update department name |
+| DELETE | /admin/departments/:id | Delete department (blocked if employees assigned) |
+
+### Branches
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| POST | /admin/branches | Create branch |
+| PUT | /admin/branches/:id | Update branch |
+| DELETE | /admin/branches/:id | Delete branch (blocked if employees assigned) |
+
+### Shifts
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| POST | /admin/shifts | Create shift |
+| PUT | /admin/shifts/:id | Update shift |
+| DELETE | /admin/shifts/:id | Delete shift (blocked if employees assigned) |
+
+### Holidays
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| GET | /admin/holidays | List holidays |
+| POST | /admin/holidays | Create holiday |
+| DELETE | /admin/holidays/:id | Delete holiday |
+
+### Rules
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| PUT | /admin/rules | Update late grace occurrences |
+
+---
+
 ## Health Check
 
 ### GET /health

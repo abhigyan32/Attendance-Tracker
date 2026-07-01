@@ -14,6 +14,7 @@ export default function Dashboard() {
   const [location, setLocation] = useState(null);
   const [cameraMode, setCameraMode] = useState('check-in');
   const [toast, setToast] = useState('');
+  const [profile, setProfile] = useState(null);
 
   const showToast = (message) => {
     setToast(message);
@@ -33,6 +34,9 @@ export default function Dashboard() {
 
   useEffect(() => {
     fetchStatus();
+    api.getProfile()
+      .then((data) => setProfile(data))
+      .catch(() => setProfile(null));
   }, []);
 
   const handleCheckInClick = async () => {
@@ -169,11 +173,11 @@ export default function Dashboard() {
           <div className="space-y-3 text-sm">
             <div className="flex justify-between">
               <span className="text-gray-600">Employee ID</span>
-              <span className="font-medium">{user?.employeeId}</span>
+              <span className="font-medium">{user?.employeeId || profile?.employeeId}</span>
             </div>
             <div className="flex justify-between">
               <span className="text-gray-600">Department</span>
-              <span className="font-medium">{user?.department}</span>
+              <span className="font-medium">{user?.department || profile?.department}</span>
             </div>
             <div className="flex justify-between">
               <span className="text-gray-600">Status</span>
@@ -186,6 +190,51 @@ export default function Dashboard() {
           <div className="mt-6 rounded-lg border border-blue-100 bg-blue-50 p-4 text-xs text-blue-800">
             <p className="font-medium">Note:</p>
             <p className="mt-1">Check-in requires location access and a webcam selfie for verification.</p>
+          </div>
+        </div>
+      </div>
+
+      <div className="mt-6 rounded-xl bg-white p-6 shadow-sm">
+        <div className="flex items-center justify-between">
+          <h2 className="text-lg font-semibold text-gray-900">Personal Details</h2>
+          <span className="rounded-full bg-gray-100 px-3 py-1 text-xs font-medium text-gray-600">Visible to you</span>
+        </div>
+        <div className="mt-5 grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+          <div>
+            <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">Full Name</p>
+            <p className="mt-1 text-sm font-medium text-gray-900">{profile?.name || user?.name}</p>
+          </div>
+          <div>
+            <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">Email</p>
+            <p className="mt-1 text-sm font-medium text-gray-900">{profile?.email || user?.email}</p>
+          </div>
+          <div>
+            <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">Phone</p>
+            <p className="mt-1 text-sm font-medium text-gray-900">{profile?.phone || 'Not provided'}</p>
+          </div>
+          <div>
+            <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">Designation</p>
+            <p className="mt-1 text-sm font-medium text-gray-900">{profile?.designation || 'Not provided'}</p>
+          </div>
+          <div>
+            <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">Branch</p>
+            <p className="mt-1 text-sm font-medium text-gray-900">{profile?.branchName || 'Not assigned'}</p>
+          </div>
+          <div>
+            <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">Shift</p>
+            <p className="mt-1 text-sm font-medium text-gray-900">{profile?.shiftName || 'Not assigned'}</p>
+          </div>
+          <div>
+            <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">Address</p>
+            <p className="mt-1 text-sm font-medium text-gray-900">{[profile?.addressLine1, profile?.addressLine2, profile?.city, profile?.state, profile?.country, profile?.pincode].filter(Boolean).join(', ') || 'Not provided'}</p>
+          </div>
+          <div>
+            <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">Week Offs</p>
+            <p className="mt-1 text-sm font-medium text-gray-900">{profile?.weekOffs?.length ? profile.weekOffs.map((day) => ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'][day]).join(', ') : 'Not set'}</p>
+          </div>
+          <div>
+            <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">Status</p>
+            <p className="mt-1 text-sm font-medium text-gray-900">{profile?.status || 'Active'}</p>
           </div>
         </div>
       </div>

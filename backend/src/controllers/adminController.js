@@ -36,6 +36,50 @@ async function createDepartment(req, res) {
   }
 }
 
+async function updateDepartment(req, res) {
+  try {
+    const result = await pool.query(
+      'UPDATE departments SET name = $1 WHERE id = $2 RETURNING id, name',
+      [req.body.name.trim(), req.params.id]
+    );
+    if (result.rows.length === 0) {
+      return res.status(404).json({ message: 'Department not found.' });
+    }
+    await pool.query(
+      'UPDATE users SET department = $1 WHERE department_id = $2',
+      [result.rows[0].name, req.params.id]
+    );
+    res.json(result.rows[0]);
+  } catch (err) {
+    if (err.code === '23505') return res.status(409).json({ message: 'Department name already exists.' });
+    res.status(500).json({ message: 'Unable to update department.' });
+  }
+}
+
+async function deleteDepartment(req, res) {
+  try {
+    const inUse = await pool.query(
+      'SELECT COUNT(*) FROM users WHERE department_id = $1',
+      [req.params.id]
+    );
+    if (parseInt(inUse.rows[0].count, 10) > 0) {
+      return res.status(409).json({
+        message: 'Cannot delete department. Employees are assigned to it. Reassign them first.',
+      });
+    }
+    const result = await pool.query(
+      'DELETE FROM departments WHERE id = $1 RETURNING id',
+      [req.params.id]
+    );
+    if (result.rows.length === 0) {
+      return res.status(404).json({ message: 'Department not found.' });
+    }
+    res.status(204).send();
+  } catch (err) {
+    res.status(500).json({ message: 'Unable to delete department.' });
+  }
+}
+
 async function createBranch(req, res) {
   const b = req.body;
   try {
@@ -50,6 +94,52 @@ async function createBranch(req, res) {
   } catch (err) {
     if (err.code === '23505') return res.status(409).json({ message: 'Branch already exists.' });
     res.status(500).json({ message: 'Unable to create branch.' });
+  }
+}
+
+async function updateBranch(req, res) {
+  const b = req.body;
+  try {
+    const result = await pool.query(
+      `UPDATE branches SET
+        name = $1, address_line1 = $2, address_line2 = $3, city = $4, state = $5,
+        country = $6, pincode = $7, latitude = $8, longitude = $9, allowed_radius_meters = $10
+       WHERE id = $11 RETURNING *`,
+      [b.name, b.addressLine1, b.addressLine2 || null, b.city, b.state,
+        b.country || 'India', b.pincode, b.latitude, b.longitude,
+        b.allowedRadiusMeters || 100, req.params.id]
+    );
+    if (result.rows.length === 0) {
+      return res.status(404).json({ message: 'Branch not found.' });
+    }
+    res.json(result.rows[0]);
+  } catch (err) {
+    if (err.code === '23505') return res.status(409).json({ message: 'Branch name already exists.' });
+    res.status(500).json({ message: 'Unable to update branch.' });
+  }
+}
+
+async function deleteBranch(req, res) {
+  try {
+    const inUse = await pool.query(
+      'SELECT COUNT(*) FROM users WHERE branch_id = $1',
+      [req.params.id]
+    );
+    if (parseInt(inUse.rows[0].count, 10) > 0) {
+      return res.status(409).json({
+        message: 'Cannot delete branch. Employees are assigned to it. Reassign them first.',
+      });
+    }
+    const result = await pool.query(
+      'DELETE FROM branches WHERE id = $1 RETURNING id',
+      [req.params.id]
+    );
+    if (result.rows.length === 0) {
+      return res.status(404).json({ message: 'Branch not found.' });
+    }
+    res.status(204).send();
+  } catch (err) {
+    res.status(500).json({ message: 'Unable to delete branch.' });
   }
 }
 
@@ -83,6 +173,66 @@ async function createShift(req, res) {
   }
 }
 
+async function updateShift(req, res) {
+  const { name, startTime, endTime, graceMinutes, halfDayMinutes, fullDayMinutes,
+    overtimeAfterMinutes, isSplit, slots = [] } = req.body;
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    const result = await client.query(
+      `UPDATE shifts SET
+        name = $1, start_time = $2, end_time = $3, grace_minutes = $4,
+        half_day_minutes = $5, full_day_minutes = $6, overtime_after_minutes = $7, is_split = $8
+       WHERE id = $9 RETURNING *`,
+      [name, startTime, endTime, graceMinutes || 0, halfDayMinutes || 240,
+        fullDayMinutes || 480, overtimeAfterMinutes || 540, !!isSplit, req.params.id]
+    );
+    if (result.rows.length === 0) {
+      await client.query('ROLLBACK');
+      return res.status(404).json({ message: 'Shift not found.' });
+    }
+    await client.query('DELETE FROM shift_slots WHERE shift_id = $1', [req.params.id]);
+    for (let i = 0; i < slots.length; i += 1) {
+      await client.query(
+        'INSERT INTO shift_slots (shift_id, slot_order, start_time, end_time) VALUES ($1,$2,$3,$4)',
+        [req.params.id, i + 1, slots[i].startTime, slots[i].endTime]
+      );
+    }
+    await client.query('COMMIT');
+    res.json(result.rows[0]);
+  } catch (err) {
+    await client.query('ROLLBACK');
+    if (err.code === '23505') return res.status(409).json({ message: 'Shift name already exists.' });
+    res.status(500).json({ message: 'Unable to update shift.' });
+  } finally {
+    client.release();
+  }
+}
+
+async function deleteShift(req, res) {
+  try {
+    const inUse = await pool.query(
+      'SELECT COUNT(*) FROM users WHERE shift_id = $1',
+      [req.params.id]
+    );
+    if (parseInt(inUse.rows[0].count, 10) > 0) {
+      return res.status(409).json({
+        message: 'Cannot delete shift. Employees are assigned to it. Reassign them first.',
+      });
+    }
+    const result = await pool.query(
+      'DELETE FROM shifts WHERE id = $1 RETURNING id',
+      [req.params.id]
+    );
+    if (result.rows.length === 0) {
+      return res.status(404).json({ message: 'Shift not found.' });
+    }
+    res.status(204).send();
+  } catch (err) {
+    res.status(500).json({ message: 'Unable to delete shift.' });
+  }
+}
+
 async function getHolidays(_req, res) {
   try {
     const result = await pool.query(`SELECT h.*, b.name AS branch_name FROM holidays h
@@ -108,8 +258,32 @@ async function createHoliday(req, res) {
   }
 }
 
+async function updateHoliday(req, res) {
+  const { name, holidayDate, branchId, description } = req.body;
+  try {
+    const result = await pool.query(
+      `UPDATE holidays SET name = $1, holiday_date = $2, branch_id = $3, description = $4
+       WHERE id = $5 RETURNING *`,
+      [name, holidayDate, branchId || null, description || null, req.params.id]
+    );
+    if (result.rows.length === 0) {
+      return res.status(404).json({ message: 'Holiday not found.' });
+    }
+    res.json(result.rows[0]);
+  } catch (err) {
+    if (err.code === '23505') return res.status(409).json({ message: 'Holiday already exists for this date and branch.' });
+    res.status(500).json({ message: 'Unable to update holiday.' });
+  }
+}
+
 async function deleteHoliday(req, res) {
-  await pool.query('DELETE FROM holidays WHERE id = $1', [req.params.id]);
+  const result = await pool.query(
+    'DELETE FROM holidays WHERE id = $1 RETURNING id',
+    [req.params.id]
+  );
+  if (result.rows.length === 0) {
+    return res.status(404).json({ message: 'Holiday not found.' });
+  }
   res.status(204).send();
 }
 
@@ -122,5 +296,20 @@ async function updateRules(req, res) {
   res.json(result.rows[0]);
 }
 
-module.exports = { getSetupData, createDepartment, createBranch, createShift,
-  getHolidays, createHoliday, deleteHoliday, updateRules };
+module.exports = {
+  getSetupData,
+  createDepartment,
+  updateDepartment,
+  deleteDepartment,
+  createBranch,
+  updateBranch,
+  deleteBranch,
+  createShift,
+  updateShift,
+  deleteShift,
+  getHolidays,
+  createHoliday,
+  updateHoliday,
+  deleteHoliday,
+  updateRules,
+};

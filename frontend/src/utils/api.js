@@ -1,7 +1,20 @@
-const API_BASE = 'https://attendance-tracker-4dou.onrender.com/api';
+const API_BASE = (import.meta.env.VITE_API_BASE_URL || '/api').replace(/\/$/, '');
+
+let unauthorizedHandler = null;
+
+export function setUnauthorizedHandler(handler) {
+  unauthorizedHandler = handler;
+}
 
 function getToken() {
   return localStorage.getItem('token');
+}
+
+class ApiError extends Error {
+  constructor(message, status) {
+    super(message);
+    this.status = status;
+  }
 }
 
 async function request(endpoint, options = {}) {
@@ -15,16 +28,25 @@ async function request(endpoint, options = {}) {
     headers.Authorization = `Bearer ${token}`;
   }
 
-  const response = await fetch(`${API_BASE}${endpoint}`, {
-    ...options,
-    headers,
-  });
+  let response;
+  try {
+    response = await fetch(`${API_BASE}${endpoint}`, {
+      ...options,
+      headers,
+    });
+  } catch {
+    throw new ApiError('Network error. Please check your connection.', 0);
+  }
 
   if (response.status === 401) {
-    localStorage.removeItem('token');
-    localStorage.removeItem('user');
-    window.location.href = '/login';
-    throw new Error('Session expired');
+    // Only clear session if this failed request used the current token.
+    // Prevents a stale in-flight request from logging out a fresh login.
+    if (getToken() === token) {
+      localStorage.removeItem('token');
+      localStorage.removeItem('user');
+      unauthorizedHandler?.();
+    }
+    throw new ApiError('Session expired', 401);
   }
 
   if (response.status === 204) return null;
@@ -34,9 +56,15 @@ async function request(endpoint, options = {}) {
     return response;
   }
 
-  const data = await response.json();
+  let data;
+  try {
+    data = await response.json();
+  } catch {
+    throw new ApiError('Unexpected server response.', response.status);
+  }
+
   if (!response.ok) {
-    throw new Error(data.message || data.errors?.[0]?.msg || 'Request failed');
+    throw new ApiError(data.message || data.errors?.[0]?.msg || 'Request failed', response.status);
   }
   return data;
 }
@@ -81,6 +109,7 @@ export const api = {
   },
 
   getAdminDashboard: () => request('/attendance/admin/dashboard'),
+  overrideAttendance: (data) => request('/attendance/admin/override', { method: 'POST', body: JSON.stringify(data) }),
 
   getAdminRecords: (params = {}) => {
     const query = new URLSearchParams(params).toString();
@@ -114,10 +143,17 @@ export const api = {
 
   getAdminSetup: () => request('/admin/setup'),
   createDepartment: (data) => request('/admin/departments', { method: 'POST', body: JSON.stringify(data) }),
+  updateDepartment: (id, data) => request(`/admin/departments/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
+  deleteDepartment: (id) => request(`/admin/departments/${id}`, { method: 'DELETE' }),
   createBranch: (data) => request('/admin/branches', { method: 'POST', body: JSON.stringify(data) }),
+  updateBranch: (id, data) => request(`/admin/branches/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
+  deleteBranch: (id) => request(`/admin/branches/${id}`, { method: 'DELETE' }),
   createShift: (data) => request('/admin/shifts', { method: 'POST', body: JSON.stringify(data) }),
+  updateShift: (id, data) => request(`/admin/shifts/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
+  deleteShift: (id) => request(`/admin/shifts/${id}`, { method: 'DELETE' }),
   getHolidays: () => request('/admin/holidays'),
   createHoliday: (data) => request('/admin/holidays', { method: 'POST', body: JSON.stringify(data) }),
+  updateHoliday: (id, data) => request(`/admin/holidays/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
   deleteHoliday: (id) => request(`/admin/holidays/${id}`, { method: 'DELETE' }),
   updateRules: (data) => request('/admin/rules', { method: 'PUT', body: JSON.stringify(data) }),
 
