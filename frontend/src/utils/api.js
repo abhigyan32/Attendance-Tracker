@@ -19,12 +19,13 @@ class ApiError extends Error {
 
 async function request(endpoint, options = {}) {
   const token = getToken();
+  const isAuthRequest = endpoint.startsWith('/auth/');
   const headers = {
     'Content-Type': 'application/json',
     ...options.headers,
   };
 
-  if (token) {
+  if (token && !isAuthRequest) {
     headers.Authorization = `Bearer ${token}`;
   }
 
@@ -39,14 +40,25 @@ async function request(endpoint, options = {}) {
   }
 
   if (response.status === 401) {
+    let errorData = null;
+    try {
+      errorData = await response.json();
+    } catch {
+      // Ignore invalid JSON response for 401s.
+    }
+
     // Only clear session if this failed request used the current token.
     // Prevents a stale in-flight request from logging out a fresh login.
-    if (getToken() === token) {
+    if (!isAuthRequest && getToken() === token) {
       localStorage.removeItem('token');
       localStorage.removeItem('user');
       unauthorizedHandler?.();
     }
-    throw new ApiError('Session expired', 401);
+
+    throw new ApiError(
+      errorData?.message || (isAuthRequest ? 'Authentication failed' : 'Session expired'),
+      401
+    );
   }
 
   if (response.status === 204) return null;
