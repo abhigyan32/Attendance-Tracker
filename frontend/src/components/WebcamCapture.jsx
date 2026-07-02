@@ -1,4 +1,4 @@
-import { useRef, useState, useCallback } from 'react';
+import { useRef, useState, useEffect, useCallback } from 'react';
 
 export default function WebcamCapture({ onCapture, onClose, mode = 'check-in' }) {
   const videoRef = useRef(null);
@@ -7,15 +7,21 @@ export default function WebcamCapture({ onCapture, onClose, mode = 'check-in' })
   const [error, setError] = useState('');
   const [started, setStarted] = useState(false);
 
+  useEffect(() => {
+    if (stream && videoRef.current) {
+      videoRef.current.srcObject = stream;
+      videoRef.current.play().catch(() => {
+        /* ignore autoplay play errors */
+      });
+    }
+  }, [stream]);
+
   const startCamera = useCallback(async () => {
     try {
       const mediaStream = await navigator.mediaDevices.getUserMedia({
         video: { facingMode: 'user', width: 640, height: 480 },
       });
       setStream(mediaStream);
-      if (videoRef.current) {
-        videoRef.current.srcObject = mediaStream;
-      }
       setStarted(true);
     } catch {
       setError('Unable to access webcam. Please allow camera permission.');
